@@ -1,0 +1,41 @@
+name: Daily AEM Job Scan - Singapore
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # 1 AM UTC = 9 AM Singapore (9 AM SGT)
+  workflow_dispatch:     # Allow manual trigger
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --save-dev playwright
+
+      - name: Scan AEM jobs
+        run: node scripts/scan-aem-jobs.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit and push
+        run: |
+          git config user.email 'action@github.com'
+          git config user.name 'GitHub Action'
+          DATE=$(date +%Y%m%d)
+          FILE="aem_jobs_${DATE}.md"
+
+          if [ -f "$FILE" ]; then
+            git add "$FILE"
+            git commit -m "Daily AEM Jobs Scan - Singapore (${DATE})" || echo "No changes to commit"
+            git push
+          else
+            echo "No job file created"
+          fi
