@@ -30,9 +30,6 @@ async function scanJobs() {
     console.log(`Searching: ${search.name}`);
     try {
       const page = await browser.newPage();
-      await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      );
       await page.goto(search.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
       let pageJobs = [];
