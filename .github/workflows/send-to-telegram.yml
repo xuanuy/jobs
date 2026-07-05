@@ -1,27 +1,35 @@
 name: Send AEM Jobs to Telegram
+
 on:
   push:
-    paths:
-      - 'aem_jobs_*.md'
     branches:
       - main
 
 jobs:
   send-telegram:
+    if: contains(github.event.head_commit.modified, 'aem_jobs_') || contains(github.event.head_commit.added, 'aem_jobs_')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - name: Send changed file to Telegram
+
+      - name: Find AEM jobs file
+        id: find_file
+        run: |
+          # Look for recently modified aem_jobs_*.md files
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^aem_jobs_[0-9]+\.md$' | head -1)
+          if [ -z "$CHANGED" ]; then
+            # If no diff, check what files exist
+            CHANGED=$(ls aem_jobs_*.md 2>/dev/null | sort -r | head -1)
+          fi
+          echo "file=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Found file: $CHANGED"
+
+      - name: Send to Telegram
+        if: steps.find_file.outputs.file != ''
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^aem_jobs_[0-9]+\.md$' | head -1)
-          echo "Changed file: $CHANGED"
-          if [ -n "$CHANGED" ]; then
-            python3 send_telegram.py "$CHANGED"
-          else
-            echo "No matching file found in diff"
-          fi
+          python3 send_telegram.py "${{ steps.find_file.outputs.file }}"
