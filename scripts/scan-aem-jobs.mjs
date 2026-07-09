@@ -2,9 +2,11 @@
 
 import { chromium } from 'playwright';
 import fs from 'fs';
+import path from 'path';
 
 const TODAY = new Date().toISOString().split('T')[0].replace(/-/g, '');
 const FILENAME = `aem_jobs_${TODAY}.md`;
+const HISTORY_FILE = '.aem_job_history.json';
 
 const SEARCHES = [
   {
@@ -21,10 +23,33 @@ const SEARCHES = [
   }
 ];
 
+// Load previously sent jobs
+function loadHistory() {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const data = fs.readFileSync(HISTORY_FILE, 'utf-8');
+      return new Set(JSON.parse(data));
+    }
+  } catch (e) {
+    console.warn('Could not load history:', e.message);
+  }
+  return new Set();
+}
+
+// Save new jobs to history
+function saveHistory(jobUrls) {
+  const history = loadHistory();
+  jobUrls.forEach(url => history.add(url));
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(Array.from(history)), 'utf-8');
+}
+
 async function scanJobs() {
   const browser = await chromium.launch({ headless: true });
   const jobs = [];
   const results = [];
+  const sentHistory = loadHistory();
+
+  console.log(`Known jobs (from history): ${sentHistory.size}`);
 
   for (const search of SEARCHES) {
     console.log(`Searching: ${search.name}`);
@@ -75,19 +100,24 @@ async function scanJobs() {
         });
       }
 
-      jobs.push(...pageJobs);
+      // Filter out jobs already sent
+      const newJobs = pageJobs.filter(job => !sentHistory.has(job.link));
+      jobs.push(...newJobs);
+
       results.push({
         search: search.name,
-        found: pageJobs.length
+        found: pageJobs.length,
+        new: newJobs.length
       });
 
-      console.log(`  ✓ Found ${pageJobs.length} jobs`);
+      console.log(`  ✓ Found ${pageJobs.length} total, ${newJobs.length} new`);
       await page.close();
     } catch (error) {
       console.error(`  ✗ Error: ${error.message}`);
       results.push({
         search: search.name,
         found: 0,
+        new: 0,
         error: error.message
       });
     }
@@ -107,28 +137,36 @@ async function main() {
 
     let markdown = `# AEM Jobs Scan - Singapore\n\n`;
     markdown += `**Scan Date:** ${new Date().toISOString()}\n`;
-    markdown += `**Total Jobs Found:** ${jobs.length}\n\n`;
+    markdown += `**New Jobs Found:** ${jobs.length}\n\n`;
 
     if (jobs.length > 0) {
-      markdown += `## Jobs\n\n`;
+      markdown += `## 🆕 New Jobs (${jobs.length})\n\n`;
       markdown += `| Company | Role | Source |\n`;
       markdown += `|---------|------|--------|\n`;
       jobs.forEach(job => {
         markdown += `| ${job.company} | [${job.title}](${job.link}) | ${job.source} |\n`;
       });
+
+      // Save new job URLs to history
+      saveHistory(jobs.map(j => j.link));
     } else {
-      markdown += `## No jobs found today\n\n`;
+      markdown += `## ✅ No new jobs today\n\nAll discovered jobs were already sent.\n\n`;
     }
 
     markdown += `\n## Scan Summary\n\n`;
     results.forEach(r => {
-      markdown += `- **${r.search}:** ${r.found} jobs${r.error ? ` (Error: ${r.error})` : ''}\n`;
+      if (r.error) {
+        markdown += `- **${r.search}:** ${r.found} total, Error: ${r.error}\n`;
+      } else {
+        markdown += `- **${r.search}:** ${r.found} total, ${r.new} new\n`;
+      }
     });
 
     markdown += `\n_Automated by GitHub Actions_\n`;
 
     fs.writeFileSync(FILENAME, markdown, 'utf-8');
     console.log(`✓ Results written to ${FILENAME}`);
+    console.log(`✓ History updated (total sent so far: ${loadHistory().size})`);
 
   } catch (error) {
     console.error(`✗ Fatal error:`, error.message);
