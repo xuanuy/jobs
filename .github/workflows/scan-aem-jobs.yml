@@ -38,10 +38,10 @@ jobs:
           DATE=$(date +%Y%m%d)
           FILE="aem_jobs_${DATE}.md"
 
-          if [ -f "$FILE" ]; then
-            git add "$FILE"
+          if [ -f "$FILE" ] || [ -f ".aem_job_history.json" ]; then
+            git add "$FILE" .aem_job_history.json 2>/dev/null
             git commit -m "Daily AEM Jobs Scan - Singapore (${DATE})" || echo "No changes to commit"
             git push
           else
-            echo "No job file created"
+            echo "No job file or history to commit"
           fi
